@@ -9,4 +9,4 @@ https://learn.microsoft.com/en-us/azure/templates/microsoft.insights/components?
 Azure CLI:
 
 ```
-az deployment group create --resource-group jcTestResGrp1 --template-file applicationInsights.bicep --parameters appInsightsName=appInsightsJcTestFnc01
+az deployment group create --resource-group TestResGrp1 --template-file applicationInsights.bicep --parameters appInsightsName=appInsightsTestFnc01

@@ -48,9 +48,9 @@ New-AzResourceGroupDeployment `
 Azure CLI:
 
 ```
-az deployment group create --resource-group jcTestResGrp1 --template-file function.bicep --parameters functionAppName=jcTestFnc01
+az deployment group create --resource-group TestResGrp1 --template-file function.bicep --parameters functionAppName=TestFnc01
 
-az deployment group create --resource-group jcTestResGrp1 --template-file function.bicep --parameters functionAppName=jcTestFnc01 storageAccountName=jcTestStorage01 storageAccountKey=strkey1
+az deployment group create --resource-group TestResGrp1 --template-file function.bicep --parameters functionAppName=TestFnc01 storageAccountName=TestStorage01 storageAccountKey=strkey1
 
 az deployment group create --resource-group myResourceGroup --template-file functionApp.bicep --parameters appSettings='[
     {"name": "MY_CUSTOM_SETTING", "value": "customValue"},
