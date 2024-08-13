@@ -1,0 +1,2 @@
+// storageAccount.bicep
+

@@ -1,92 +1,10 @@
 // function.bicep
 
-// Microsoft Bicep Function Documentation: 
-// https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites?pivots=deployment-language-bicep
 
-/*
-Deployment:
-  Powershell:
-    Install-Module -Name Az -AllowClobber -Force
+// ******************************************************************************************************************************
+// PARAMETERS:
 
-    # Define parameters
-    $resourceGroupName = "myResourceGroup"
-    $templateFile = "path\to\your\functionApp.bicep"
-    $appSettings = @(
-        @{
-            name  = "MY_CUSTOM_SETTING"
-            value = "customValue"
-        },
-        @{
-            name  = "ANOTHER_SETTING"
-            value = "anotherValue"
-        }
-    )
-
-    # Convert the appSettings array to a JSON string
-    $appSettingsJson = $appSettings | ConvertTo-Json -Compress
-
-    # Deploy the Bicep template
-    New-AzResourceGroupDeployment `
-        -ResourceGroupName $resourceGroupName `
-        -TemplateFile $templateFile `
-        -appSettings $appSettingsJson
-
-  Azure CLI:
-    az deployment group create --resource-group myResourceGroup --template-file functionApp.bicep --parameters appSettings='[
-      {"name": "MY_CUSTOM_SETTING", "value": "customValue"},
-      {"name": "ANOTHER_SETTING", "value": "anotherValue"} ]'
-
-    az deployment group create --resource-group myResourceGroup --template-file functionApp.bicep --parameters @functionApp.parameters.json
-
-    {
-    '$schema': 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
-    contentVersion: '1.0.0.0'
-    parameters: {
-      appSettings: {
-        value: [
-          {
-            name: 'MY_CUSTOM_SETTING'
-            value: 'customValue'
-          }
-          {
-            name: 'ANOTHER_SETTING'
-            value: 'anotherValue'
-          }
-        ]
-      }
-      storageAccountName: {
-        value: 'mystorageaccount'
-      }
-      storageAccountKey: {
-        value: 'YOUR_STORAGE_KEY'
-      }
-      appInsightsInstrumentationKey: {
-        value: 'YOUR_INSTRUMENTATION_KEY'
-      }
-      functionAppName: {
-        value: 'myFunctionApp'
-      }
-      location: {
-        value: 'WestUS'
-      }
-      identityType: {
-        value: 'SystemAssigned'
-      }
-    }
-  } 
-  
-  Check on deployment status from command line: 
-    az deployment group list --resource-group rg-resGrpName --output table
-
-  Validate code & view generated json:
-  bicep build ./function.bicep
-
-  Key Vault Secret App Setting:
-  SettingsGroup__SettingName
-  @Microsoft.KeyVault(SecretUri=${keyVaultResource.properties.vaultUri}secrets/GetSecretName/) 
-*/
-
-// Len 2-60. Valid characters: Alphanumeric, hyphens and Unicode characters that can be mapped to Punycode. Can't start or end with hyphen.
+// Function Name: Length 2-60 characters. Valid characters: Alphanumeric, hyphens and Unicode characters that can be mapped to Punycode. Can't start or end with hyphen.
 @minLength(2)
 @maxLength(60)
 param functionAppName string
@@ -197,7 +115,7 @@ param managedPipelineMode string = 'Integrated'
 @description('Specifies whether the Function App should use a 32-bit worker process. Defaults to false.')
 param use32BitWorkerProcess bool = false
 
-@description('Specifies whether the Function App should always be on. Applicable only for App Service Plan.')
+@description('Specifies whether the Function App should always be on. Applicable only for App Service Plan not the consumption plan.')
 param alwaysOn bool = true
 
 @description('Specifies the FTPS state of the Function App. Options are AllAllowed, FtpsOnly, or Disabled.')
@@ -217,17 +135,59 @@ param httpsOnly bool = true
 @description('Specifies a dictionary of tags to be assigned to the Function App.')
 param tags object = {}
 
+
 @description('The Application Insights Instrumentation Key. If not provided, Application Insights will not be configured.')
 param appInsightsInstrumentationKey string = ''
 
-@description('The name of the Azure Storage account to be used by the Function App.')
-param storageAccountName string
+
+@description('The name of the Azure Storage account to be used by the Function App. If not provided, a new storage account will be created.')
+param storageAccountName string = ''
+
+@description('The resource group of the existing storage account. Required if storageAccountName is provided.')
+param storageAccountResourceGroup string = resourceGroup().name
 
 @secure()
-@description('The access key of the Azure Storage account to be used by the Function App.')
-param storageAccountKey string
+@description('The access key of the Azure Storage account to be used by the Function App. If not provided, a new storage account will be created.')
+param storageAccountKey string = ''
 
 
+// ******************************************************************************************************************************
+// VARIABLES:
+
+// Generate a unique storage account name if not provided
+var filteredFunctionAppName = replace(replace(functionAppName, '-', ''), '_', '')
+var truncatedFunctionAppName = toLower(take(filteredFunctionAppName, 21))
+var generatedStorageAccountName = 'str${truncatedFunctionAppName}'
+
+
+// ******************************************************************************************************************************
+// Storage Account:
+
+// Create a new storage account if storageAccountName is not provided
+resource storageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' = if (empty(storageAccountName)) {
+  name: generatedStorageAccountName
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+  properties: {}
+}
+
+// Reference an existing storage account if storageAccountName is provided
+resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' existing = if (!empty(storageAccountName)) {
+  name: storageAccountName
+  scope: resourceGroup(storageAccountResourceGroup)
+}
+
+// Determine the actual storage account name to be used
+var actualStorageAccountName = !empty(storageAccountName) ? storageAccountName : generatedStorageAccountName
+
+// Retrieve the storage account key, either from the provided key or by querying the account
+var actualStorageAccountKey = !empty(storageAccountKey) ? storageAccountKey : storageAccount.listKeys().keys[0].value
+
+
+// ******************************************************************************************************************************
 resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
   name: functionAppName
   location: location
@@ -250,11 +210,11 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
         [
           {
             name: 'AzureWebJobsStorage'
-            value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=${az.environment().suffixes.storage}'
+            value: 'DefaultEndpointsProtocol=https;AccountName=${actualStorageAccountName};AccountKey=${actualStorageAccountKey};EndpointSuffix=${az.environment().suffixes.storage}'
           }
           {
             name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-            value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=${az.environment().suffixes.storage}'
+            value: 'DefaultEndpointsProtocol=https;AccountName=${actualStorageAccountName};AccountKey=${actualStorageAccountKey};EndpointSuffix=${az.environment().suffixes.storage}'
           }
         ],
 
@@ -273,11 +233,17 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
       alwaysOn: useConsumptionPlan ? null : alwaysOn
       ftpsState: ftpsState
     }
+    publicNetworkAccess: 'Enabled'
     clientAffinityEnabled: clientAffinityEnabled
     httpsOnly: httpsOnly
   } 
   tags: tags
+  dependsOn: [
+    storageAccount
+  ]  
 }
   
 output name string = functionApp.name
-output id string = functionApp.identity.principalId
+output id string = functionApp.id
+output principalId string = contains(functionApp, 'identity') && contains(functionApp.identity, 'principalId') ? functionApp.identity.principalId : 'Not Available'
+output storageAccountNameOutput string = actualStorageAccountName
